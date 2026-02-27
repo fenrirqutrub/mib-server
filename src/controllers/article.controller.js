@@ -169,7 +169,7 @@ export const incrementView = async (req, res) => {
  */
 export const getArticles = async (req, res) => {
   try {
-    const { categorySlug, category, search, limit = 10, page = 1 } = req.query;
+    const { categorySlug, category, search, limit, page = 1 } = req.query;
 
     const filter = {};
 
@@ -193,15 +193,15 @@ export const getArticles = async (req, res) => {
       filter.title = { $regex: search.trim(), $options: "i" };
     }
 
-    const parsedLimit = parseInt(limit, 10);
+    const parsedLimit = limit ? parseInt(limit, 10) : 0;
     const parsedPage = parseInt(page, 10);
-    const skip = (parsedPage - 1) * parsedLimit;
+    const skip = parsedLimit > 0 ? (parsedPage - 1) * parsedLimit : 0;
 
-    const articles = await Article.aggregate([
+    const pipeline = [
       { $match: filter },
       { $sort: { createdAt: -1 } },
-      { $skip: skip },
-      { $limit: parsedLimit },
+      ...(skip > 0 ? [{ $skip: skip }] : []),
+      ...(parsedLimit > 0 ? [{ $limit: parsedLimit }] : []),
       {
         $lookup: {
           from: "comments",
@@ -227,8 +227,9 @@ export const getArticles = async (req, res) => {
       {
         $project: { commentsList: 0, categoryData: 0, "category.__v": 0 },
       },
-    ]);
+    ];
 
+    const articles = await Article.aggregate(pipeline);
     const total = await Article.countDocuments(filter);
 
     return res.json({
@@ -237,7 +238,7 @@ export const getArticles = async (req, res) => {
       count: articles.length,
       total,
       currentPage: parsedPage,
-      totalPages: Math.ceil(total / parsedLimit),
+      totalPages: parsedLimit > 0 ? Math.ceil(total / parsedLimit) : 1,
     });
   } catch (err) {
     console.error("GET ARTICLES ERROR:", err);
